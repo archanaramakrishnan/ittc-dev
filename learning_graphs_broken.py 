@@ -1,0 +1,148 @@
+import statistics
+import random
+import argparse
+import csv
+import matplotlib
+matplotlib.use('agg')
+from itertools import zip_longest
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
+from collections import namedtuple
+
+def generate_graph(file_name):
+    if file_name is not None:
+        csvfile =  open(file_name,  'r')
+    reader =  csv.reader(csvfile)
+    rows =  list(reader)
+
+    x_bar_labels = []
+    all_averages = []
+    all_stdev = []
+    avg = []
+    max_sums = []
+    min_avg = 0
+    max_avg = 0
+
+    #obtain bar labels for the graph legend
+    directories = rows[:2][0][1:]
+    configs = rows[:2][1][1:]
+
+    #create config_list and remove all empty cells from configs, i.e., go from ['nopgo', '', 'pgo', '', 'nopgo', '', 'pgo', ''] to ['nopgo','pgo','nopgo','pgo']
+    config_list = filter(None, configs)
+
+    normalizing_config = configs[0]
+
+    #list comprehension to find the index of all occurances of normalizing config which is located at configs[0] in the csv file
+    normalizing_config_positions = [i for i, x in enumerate(config_list) if x == normalizing_config]
+
+    bar_labels = []
+    for i in range(len(configs)):
+        if not configs[i] == '':
+            if not directories[i] == '':
+                bar_labels.append(directories[i] + " " + configs[i])
+                index_of_previous_current_directory = i
+            else:
+                bar_labels.append(directories[index_of_previous_current_directory] + " " + configs[i])
+
+    #obtain the average values
+    #start at rows[3] to skip the column headers
+    for line in rows[3:]:
+        avg =  []
+        stdev = []
+        #collect benchmark names for the x axis labels
+        x_bar_labels.append(line[0])
+
+        #odd cells refers to the left entry which refers to the averages
+        for odd_cell in line[1::2]:
+            if odd_cell ==  '-':
+                avg.append(0)
+            else:
+                avg.append(float(odd_cell))
+                if float(odd_cell)<min_avg:
+                    min_avg = float(odd_cell)
+                if float(odd_cell) > max_avg:
+                    max_avg = float(odd_cell)
+        all_averages.append(avg)
+
+        for even_cell in line[2::2]:
+            if even_cell == '-':
+                stdev.append(0)
+            else:
+                stdev.append(float(even_cell))
+        all_stdev.append(stdev)
+        sums = avg + stdev
+        max_sums.append(max(sums))
+
+    x_bar_values= list(map(list, zip_longest(*all_averages,  fillvalue=0)))
+    error_bars = list(map(list, zip_longest(*all_stdev, fillvalue=0)))
+
+    #if values are being normalized, you would not want the normalized config info on the graph
+    if "*" in normalizing_config:
+        #delete all the lists of averages of the normalizing config
+        x_bar_values = [i for j, i in enumerate(x_bar_values) if j not in normalizing_config_positions]
+        #delete all the non normalizing configs from the bar labels
+        bar_labels = [i for j, i in enumerate(bar_labels) if j not in normalizing_config_positions]
+        #delete all the lists of stdevs of the normalizing config
+        error_bars = [i for j, i in enumerate(error_bars) if j not in normalizing_config_positions]
+        #insert the averages of the averages at the end of the lists for each bar and insert 0 for the error_bars because you would not need error bars
+        for i in range(len(x_bar_values)):
+            x_bar_values[i].append(statistics.mean(x_bar_values[i]))
+            error_bars[i].append(0)
+        x_bar_labels.append("average")
+
+    n_groups =len(x_bar_labels)
+
+    fig, ax = plt.subplots()
+
+    index = np.arange(0, n_groups)
+
+    bar_width = (1 / len(bar_labels)) - ((1 /len(bar_labels)) * 0.2)
+    opacity = 0.8
+    error_config = {'ecolor': '0.3'}
+
+    no_error_bars = (0, ) * len(x_bar_labels)
+
+    #create a list of bar_widths
+    widths = []
+    shift = 0
+    for i in range(len(x_bar_values)):
+        widths.append(bar_width + shift)
+        shift += bar_width
+
+    colors = ["#137e6d", "#fcb001", "#ff474c", "#b790d4", "#b0dd16", "#b5485d", "#0485d1", "#960056"]
+    for i in range(len(x_bar_values)):
+        bar_color = colors[i]
+        ax.bar(index + widths[i], x_bar_values[i], bar_width,
+                alpha=opacity, color=bar_color,
+                yerr=error_bars[i], error_kw=error_config,
+                label=bar_labels[i])
+    ax.set_xlabel('Benchmarks')
+    ax.set_ylabel('Averages')
+    plt.title("Averages normalized by " + normalizing_config[:-1], y=1.15)
+    ax.set_xticks(index + bar_width / 2)
+    ax.set_xticklabels(x_bar_labels)
+    plt.xticks(rotation=90)
+    plt.legend(bbox_to_anchor=(0,1.02,1,0.2), loc="lower center", ncol=min(len(bar_labels), 4))
+    plt.ylim(0, max(max_sums) + max(max_sums) * 0.2)
+    fig.tight_layout()
+    fig.set_size_inches(18.5, 10.5)
+    fig.savefig("test.png",  bbox_inches="tight",  pad_inches=0.1)
+    plt.show()
+
+if __name__ == "__main__":
+    #use the positional command line input to get the file directory and normalizatio as input
+    parser = argparse.ArgumentParser()
+    parser.add_argument("file_name", help="generate a graph visualization of the data in the csv file", type=str)
+    args = parser.parse_args()
+    generate_graph(args.file_name)
+"""
+-get ride of white space on graph
+-check if archana_summary works for 3 or more directories
+-fix spacing of the sets of bars so that they dont spill into the next one
+-move the legend outside the graph
+-fix the image getting randomly resized. it is something to do with plt.lefent(bbbox)..."
+-create a list of 10-15 set colors that are nice looking
+
+-fix the error bars on llvm by using an online normalized standard deviation calculator and figuring out what is going wrong
+"""
